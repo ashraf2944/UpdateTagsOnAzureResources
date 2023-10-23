@@ -10,69 +10,84 @@ Import-Module ImportExcel
 
  
 
-# Function to update tags for resource groups and resources
-Function Update-Tags {
+Function Update-resourceTags {
     param(
         [string]$subscriptionId,
         [string]$resourceGroup,
         [hashtable]$tags
     )
 
+ 
+
     # Set the current subscription
     Set-AzContext -Subscription $subscriptionId
 
-    # Update tags for the resource group
-    Set-AzResourceGroup -Name $resourceGroup -Tag $tags
+ 
 
-    # Get resources in the resource group
+    # Retrieve Network Interfaces in the specified Resource Group
     $resources = Get-AzResource -ResourceGroupName $resourceGroup
 
-    # Update tags for each resource
+ 
+
+    # Iterate through each Network Interface and update tags
     foreach ($resource in $resources) {
-        Set-AzResource -ResourceId $resource.ResourceId -Tag $tags
+        # Merge the existing tags with the new tags, giving priority to the new tags
+        $mergedTags = @{}
+        if ($resource.Tags) {
+            $resource.Tags.GetEnumerator() | ForEach-Object {
+                $mergedTags[$_.Key] = $_.Value
+            }
+        }
+        if ($tags) {
+            $tags.GetEnumerator() | ForEach-Object {
+                $mergedTags[$_.Key] = $_.Value
+            }
+        }
+
+ 
+
+        # Update tags for the Network Interface
+        Update-AzTag -ResourceId $resource.Id -Tag $mergedTags -Operation Merge
     }
 }
 
  
 
-# Connect to Azure using Service Principal
-$clientId = "YOUR_SPN_CLIENT_ID"
-$clientSecret = "YOUR_SPN_CLIENT_SECRET"
-$tenantId = "YOUR_TENANT_ID"
-
- 
-
 # Authenticate using Service Principal
+$clientId = "<YOUR-CLIENT-ID>"
+$clientSecret = "<YOUR-CLIENT-SECRET>"
+$tenantId = "<YOUR-TENANT-ID>"
 $securePassword = ConvertTo-SecureString -AsPlainText $clientSecret -Force
 $psCredential = New-Object System.Management.Automation.PSCredential($clientId, $securePassword)
 Connect-AzAccount -ServicePrincipal -Credential $psCredential -TenantId $tenantId
 
  
 
-# Read Excel data and update tags
-$excelFilePath = "C:\Path\To\Your\Excel\File.xlsx"
+# Read Excel data and update tags for network interfaces
+$excelFilePath = "Path to your excel file"
 $excelData = Import-Excel -Path $excelFilePath
 
  
 
 foreach ($row in $excelData) {
-    $subscriptionName = $row.SUBSCRIPTION
     $resourceGroup = $row.RESOURCE_GROUPS
+    $subscriptionName = $row.SUBSCRIPTION    
     $tags = @{
-        "AppName" = $row.AppName
-        "AppCategory" = $row.AppCategory
-        "AppOwner" = $row.AppOwner
-        "ITSponsor" = $row.ITSponsor
         "CostCenter" = $row.CostCenter
+        "AppOwner" = $row.AppOwner
         "AssetOwner" = $row.AssetOwner
         "ServiceNowBA" = $row.ServiceNowBA
         "ServiceNowAS" = $row.ServiceNowAS
         "SecurityReviewID" = $row.SecurityReviewID
     }
 
+ 
+
     # Get the subscription ID based on subscription name
     $subscriptionId = (Get-AzSubscription | Where-Object { $_.Name -eq $subscriptionName }).Id
 
-    # Update tags for the resource group and resources
-    Update-Tags -subscriptionId $subscriptionId -resourceGroup $resourceGroup -tags $tags
+ 
+
+    # Update tags for Network Interfaces in the Resource Group without removing existing tags
+    Update-resourceTags -subscriptionId $subscriptionId -resourceGroup $resourceGroup -tags $tags
 }
